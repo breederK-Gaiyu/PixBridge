@@ -781,9 +781,14 @@ class PixBridge(QWidget):
 
             # 创建类型专属文件夹
             type_folder = os.path.join(self.save_dir, MEDIA_FOLDERS[media_type])
+
+            self.log(f"📁 检查本地文件夹: {type_folder}")
+
             if not os.path.exists(type_folder):
                 os.makedirs(type_folder)
-                self.log(f"📁 创建文件夹: <code>{MEDIA_FOLDERS[media_type]}</code>")
+                self.log(f"📁 创建本地文件夹: <code>{MEDIA_FOLDERS[media_type]}</code>")
+            else:
+                self.log(f"✅ 本地文件夹已存在: <code>{MEDIA_FOLDERS[media_type]}</code>")
 
             # 复制文件到本地
             copied_files = []
@@ -811,7 +816,9 @@ class PixBridge(QWidget):
 
             # 导入到达芬奇
             if copied_files:
-                success_count = self.import_to_resolve_batch(copied_files, media_type)
+                # 确保文件路径是字符串（达芬奇 API 需要字符串列表）
+                file_paths_str = [str(f) for f in copied_files]
+                success_count = self.import_to_resolve_batch(file_paths_str, media_type)
 
                 if success_count > 0:
                     self.import_count[media_type] += success_count
@@ -972,7 +979,7 @@ class PixBridge(QWidget):
         批量导入文件到达芬奇媒体池的分类文件夹（v1.6）
 
         Args:
-            file_paths: 文件路径列表
+            file_paths: 文件路径列表（字符串列表）
             media_type: 媒体类型 ('image', 'video', 'audio')
 
         Returns:
@@ -983,7 +990,10 @@ class PixBridge(QWidget):
             return 0
 
         if not file_paths:
+            self.log("⚠️ 没有文件需要导入")
             return 0
+
+        self.log(f"📤 准备导入 {len(file_paths)} 个 {media_type} 文件到达芬奇...")
 
         try:
             # 获取达芬奇实例
@@ -1009,9 +1019,12 @@ class PixBridge(QWidget):
             target_bin = None
             subfolders = root_folder.GetSubFolderList()
 
+            self.log(f"🔍 在达芬奇中查找文件夹: {folder_name}")
+
             for folder in subfolders:
                 if folder.GetName() == folder_name:
                     target_bin = folder
+                    self.log(f"✅ 找到现有文件夹: {folder_name}")
                     break
 
             # 如果文件夹不存在，创建它
@@ -1021,15 +1034,41 @@ class PixBridge(QWidget):
 
             # 设置当前文件夹
             media_pool.SetCurrentFolder(target_bin)
+            self.log(f"📂 已设置当前文件夹为: {folder_name}")
 
             # 批量导入媒体文件
+            self.log(f"⏳ 正在导入文件到达芬奇...")
+            self.log(f"   媒体类型: {media_type}")
+            self.log(f"   文件数量: {len(file_paths)}")
+            self.log(f"   目标文件夹: {folder_name}")
+
+            # 逐个显示文件路径（便于调试）
+            for i, fp in enumerate(file_paths, 1):
+                self.log(f"   [{i}] {fp}")
+
+            # 验证文件存在性
+            missing_files = [fp for fp in file_paths if not os.path.exists(fp)]
+            if missing_files:
+                self.log(f"❌ 警告: {len(missing_files)} 个文件不存在!")
+                for mf in missing_files:
+                    self.log(f"   ❌ {mf}")
+
             imported_clips = media_pool.ImportMedia(file_paths)
+
+            self.log(f"📊 达芬奇返回值类型: {type(imported_clips)}")
+            self.log(f"📊 达芬奇返回值: {imported_clips}")
 
             if imported_clips:
                 success_count = len(imported_clips) if isinstance(imported_clips, list) else 1
+                self.log(f"🎉 成功导入 {success_count} 个 {media_type} 素材到达芬奇")
                 return success_count
             else:
-                self.log(f"⚠️ 批量导入到达芬奇失败")
+                self.log(f"⚠️ 达芬奇返回: ImportMedia 返回 None 或空列表")
+                self.log(f"   可能原因:")
+                self.log(f"   1. 文件格式不被达芬奇支持")
+                self.log(f"   2. 文件编码不兼容")
+                self.log(f"   3. 文件损坏或无法读取")
+                self.log(f"   4. 达芬奇项目设置不支持该分辨率/帧率")
                 return 0
 
         except Exception as e:
